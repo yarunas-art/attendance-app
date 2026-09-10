@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>לוח נוכחות — משאבי אנוש</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;500;700;900&family=Assistant:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F6F4EE;
+    --surface:#FFFFFF;
+    --surface-soft:#F0EEE5;
+    --ink:#22312E;
+    --ink-soft:#5C6B65;
+    --ink-faint:#93998F;
+    --primary:#2F5D53;
+    --primary-dark:#1E3E37;
+    --primary-tint:#E4ECE9;
+    --accent:#BD8A2E;
+    --accent-tint:#F5EAD3;
+    --line:#E2DED2;
+    --danger:#A33B34;
+    --radius-s:8px;
+    --radius-m:14px;
+    --radius-l:22px;
+    --shadow:0 1px 2px rgba(34,49,46,.06), 0 8px 24px -12px rgba(34,49,46,.18);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Assistant',sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.serif{font-family:'Frank Ruhl Libre',serif;}
+  #app{max-width:960px;margin:0 auto;padding:20px 16px 80px;min-height:100vh;}
+  button{font-family:inherit;cursor:pointer;}
+  input,textarea{font-family:inherit;}
+
+  /* ---------- top bar ---------- */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-mark{width:38px;height:38px;border-radius:11px;background:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .brand-title{font-size:20px;font-weight:700;line-height:1.1;}
+  .brand-sub{font-size:12.5px;color:var(--ink-soft);margin-top:1px;}
+  .role-pill{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 6px 5px 14px;box-shadow:var(--shadow);}
+  .role-pill .tag{font-size:12.5px;font-weight:700;color:var(--primary);}
+  .role-pill button{background:var(--surface-soft);border:none;border-radius:999px;padding:6px 13px;font-size:12.5px;font-weight:600;color:var(--ink-soft);transition:background .15s;}
+  .role-pill button:hover{background:var(--line);}
+
+  /* ---------- role select screen ---------- */
+  .welcome{padding:40px 4px 10px;text-align:center;}
+  .welcome h1{font-size:30px;margin:0 0 8px;color:var(--primary-dark);}
+  .welcome p{color:var(--ink-soft);font-size:15px;max-width:420px;margin:0 auto 34px;line-height:1.6;}
+  .role-cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:520px;margin:0 auto;}
+  @media(max-width:520px){.role-cards{grid-template-columns:1fr;}}
+  .role-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-l);padding:28px 20px;text-align:center;box-shadow:var(--shadow);transition:transform .15s, box-shadow .15s;}
+  .role-card:hover{transform:translateY(-2px);box-shadow:0 4px 8px rgba(34,49,46,.08), 0 16px 32px -14px rgba(34,49,46,.24);}
+  .role-card .ico{width:52px;height:52px;border-radius:16px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;}
+  .role-card.manager .ico{background:var(--primary-tint);}
+  .role-card.employee .ico{background:var(--accent-tint);}
+  .role-card h3{font-size:18px;margin:0 0 6px;}
+  .role-card p{font-size:13px;color:var(--ink-soft);margin:0 0 18px;line-height:1.5;}
+  .role-card .go{display:inline-block;background:var(--primary);color:#fff;border:none;border-radius:999px;padding:9px 22px;font-size:13.5px;font-weight:700;}
+  .role-card.employee .go{background:var(--accent);}
+
+  /* ---------- tabs ---------- */
+  .tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;margin-bottom:18px;-ms-overflow-style:none;scrollbar-width:none;}
+  .tabs::-webkit-scrollbar{display:none;}
+  .tab-btn{flex-shrink:0;background:transparent;border:1px solid transparent;border-radius:999px;padding:8px 16px;font-size:13.5px;font-weight:600;color:var(--ink-soft);white-space:nowrap;transition:.15s;}
+  .tab-btn:hover{background:var(--surface-soft);}
+  .tab-btn.active{background:var(--primary);color:#fff;}
+
+  .day-chip{flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:9px 15px;min-width:64px;}
+  .day-chip .dn{font-size:12.5px;font-weight:700;color:var(--ink-soft);}
+  .day-chip .dd{font-size:11px;color:var(--ink-faint);}
+  .day-chip.active{background:var(--primary);border-color:var(--primary);}
+  .day-chip.active .dn,.day-chip.active .dd{color:#fff;}
+  .day-chip.today:not(.active){border-color:var(--accent);}
+  .day-chip.today:not(.active) .dn{color:var(--accent);}
+
+  /* ---------- cards / sections ---------- */
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-l);padding:20px;box-shadow:var(--shadow);margin-bottom:18px;}
+  .panel-title{font-size:15px;font-weight:700;margin:0 0 14px;display:flex;align-items:center;justify-content:space-between;}
+  .muted{color:var(--ink-soft);font-size:13px;}
+
+  /* ---------- manager grid ---------- */
+  .grid-scroll{overflow-x:auto;}
+  table.grid{width:100%;border-collapse:collapse;min-width:640px;}
+  table.grid th, table.grid td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:center;vertical-align:middle;}
+  table.grid th{font-size:12.5px;color:var(--ink-soft);font-weight:700;}
+  table.grid th.today-col{color:var(--accent);}
+  .day-holiday-btn{display:block;margin:6px auto 0;background:var(--surface-soft);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:10.5px;font-weight:700;color:var(--ink-soft);white-space:nowrap;}
+  .day-holiday-btn:hover{background:var(--line);}
+  .day-holiday-btn.active{background:#C1622C;border-color:#C1622C;color:#fff;}
+  table.grid td.name-cell{text-align:right;font-weight:600;font-size:13.5px;position:sticky;right:0;background:var(--surface);white-space:nowrap;}
+  table.grid td.cell{cursor:pointer;min-width:92px;}
+  table.grid td.cell:hover{background:var(--surface-soft);}
+  table.grid td.cell.readonly{cursor:default;}
+  table.grid td.cell.readonly:hover{background:transparent;}
+  .status-chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700;color:#fff;line-height:1.3;}
+  .status-chip.empty{background:transparent;color:var(--ink-faint);font-weight:600;}
+  .cell-note{display:block;font-size:10.5px;color:var(--ink-soft);margin-top:3px;font-weight:400;}
+  tr.totals td{font-weight:700;font-size:12px;color:var(--ink-soft);border-bottom:none;padding-top:12px;}
+
+  /* ---------- employee day view ---------- */
+  .day-summary{display:flex;align-items:baseline;gap:8px;margin-bottom:16px;}
+  .day-summary .count{font-family:'Frank Ruhl Libre',serif;font-size:34px;font-weight:700;color:var(--primary-dark);}
+  .day-summary .label{font-size:14px;color:var(--ink-soft);}
+  .absentee-list{display:flex;flex-direction:column;gap:8px;}
+  .absentee-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface-soft);border-radius:12px;padding:10px 14px;}
+  .absentee-row .who{font-weight:700;font-size:14px;}
+  .absentee-row .note{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .empty-state{text-align:center;padding:36px 10px;color:var(--ink-soft);}
+  .empty-state .big{font-size:40px;margin-bottom:6px;}
+  .in-office-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
+  .in-office-list span{background:var(--primary-tint);color:var(--primary-dark);border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:600;}
+
+  /* ---------- employees management ---------- */
+  .emp-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);}
+  .emp-row:last-child{border-bottom:none;}
+  .emp-row input{border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13.5px;background:var(--bg);}
+  .emp-row input.ename{flex:1.4;}
+  .emp-row input.ephone{flex:1;direction:ltr;text-align:right;}
+  .icon-btn{background:transparent;border:none;color:var(--ink-faint);font-size:16px;padding:6px;border-radius:8px;}
+  .icon-btn:hover{background:var(--surface-soft);color:var(--danger);}
+  .add-emp{display:flex;gap:10px;margin-top:14px;}
+  .add-emp input{flex:1;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:13.5px;}
+  .btn-primary{background:var(--primary);color:#fff;border:none;border-radius:10px;padding:9px 18px;font-size:13.5px;font-weight:700;}
+  .btn-primary:hover{background:var(--primary-dark);}
+  .btn-ghost{background:var(--surface-soft);border:none;border-radius:10px;padding:9px 16px;font-size:13.5px;font-weight:700;color:var(--ink-soft);}
+
+  /* ---------- messages ---------- */
+  .msg-compose textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14px;resize:vertical;min-height:64px;background:var(--bg);}
+  .msg-list{display:flex;flex-direction:column;gap:12px;margin-top:16px;}
+  .msg-item{background:var(--surface-soft);border-radius:14px;padding:13px 16px;position:relative;}
+  .msg-item .mtext{font-size:14.5px;line-height:1.55;white-space:pre-wrap;}
+  .msg-item .mmeta{font-size:11.5px;color:var(--ink-faint);margin-top:8px;}
+  .msg-item .mdel{position:absolute;left:10px;top:10px;}
+
+  /* ---------- modal ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(34,49,46,.45);display:flex;align-items:flex-end;justify-content:center;z-index:50;padding:0;}
+  @media(min-width:560px){.overlay{align-items:center;}}
+  .modal{background:var(--surface);width:100%;max-width:420px;border-radius:22px 22px 0 0;padding:22px 20px 26px;box-shadow:0 -8px 30px rgba(0,0,0,.2);}
+  @media(min-width:560px){.modal{border-radius:22px;}}
+  .modal h3{margin:0 0 3px;font-size:17px;}
+  .modal .sub{font-size:13px;color:var(--ink-soft);margin-bottom:16px;}
+  .chip-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;}
+  .chip-opt{border:2px solid transparent;border-radius:12px;padding:10px 6px;font-size:13px;font-weight:700;color:#fff;text-align:center;}
+  .chip-opt.clear{background:var(--surface-soft)!important;color:var(--ink-soft)!important;}
+  .chip-opt.selected{border-color:var(--ink);}
+  .modal input.note{width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:13.5px;margin-bottom:16px;background:var(--bg);}
+  .modal-actions{display:flex;gap:10px;}
+  .modal-actions button{flex:1;padding:11px;border-radius:12px;font-size:14px;font-weight:700;border:none;}
+  .modal-actions .save{background:var(--primary);color:#fff;}
+  .modal-actions .cancel{background:var(--surface-soft);color:var(--ink-soft);}
+
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 20px;border-radius:999px;font-size:13px;font-weight:600;box-shadow:var(--shadow);z-index:100;opacity:0;transition:opacity .25s;pointer-events:none;}
+  .toast.show{opacity:1;}
+
+  .switch-link{background:none;border:none;color:var(--ink-faint);font-size:12.5px;text-decoration:underline;padding:0;margin-top:18px;}
+</style>
+</head>
+<body>
+<div id="app"><div class="empty-state">טוען…</div></div>
+
+<script>
+/* ===================== DATA & CONSTANTS ===================== */
+const MANAGER_PIN = "1601"; // אפשר לשנות כאן
+
+const STATUSES = [
+  {id:'vacation',   label:'חופשה',            color:'#3E7CA6'},
+  {id:'sick',       label:'מחלה',             color:'#B5495B'},
+  {id:'child_sick', label:'מחלת ילד',         color:'#C97FA0'},
+  {id:'maternity',  label:'חופשת לידה',       color:'#A6698A'},
+  {id:'home',       label:'עבודה מהבית',       color:'#5C8A5C'},
+  {id:'late',       label:'הגעה מאוחרת',       color:'#B98A2E'},
+  {id:'early_leave',label:'יציאה מוקדמת',      color:'#5B7FA6'},
+  {id:'absent',     label:'לא מגיע/ה',        color:'#8B4B3A'},
+  {id:'holiday',    label:'חג',               color:'#C1622C'},
+  {id:'training',   label:'השתלמות',          color:'#6B5B95'},
+  {id:'field',      label:'יציאה בתפקיד',      color:'#3E8E8C'},
+  {id:'other',      label:'אחר',              color:'#7A7A72'},
+];
+const STATUS_MAP = Object.fromEntries(STATUSES.map(s=>[s.id,s]));
+
+const DAY_NAMES = ['ראשון','שני','שלישי','רביעי','חמישי'];
+
+const DEFAULT_EMPLOYEES = [
+  {id:'e1',  name:'יוליה שטלמן',        phone:'054-6301270'},
+  {id:'e2',  name:'מריה אגרסט',         phone:''},
+  {id:'e3',  name:'יפית טטרו',          phone:'052-7320803'},
+  {id:'e4',  name:'עדינה חלואני',       phone:'052-8504424'},
+  {id:'e5',  name:'עדי לוריא',          phone:'050-3453117'},
+  {id:'e6',  name:'סיגל דוד',           phone:''},
+  {id:'e7',  name:'אלה איזינגר',        phone:'058-4140265'},
+  {id:'e8',  name:'ילנה שפירו כספי',    phone:'054-4494824'},
+  {id:'e9',  name:'אירה טטרוק',         phone:''},
+  {id:'e10', name:'חגית ערד',           phone:'052-2559614'},
+  {id:'e11', name:'שירלי בן ישי',       phone:'054-4762573'},
+  {id:'e12', name:'עדי מרקוביץ',        phone:'052-8233140'},
+  {id:'e13', name:'ליזה קנובל',         phone:''},
+  {id:'e14', name:'מיטל הופשטיין',      phone:'052-8792287'},
+  {id:'e15', name:'ירון סילבס',         phone:'050-3459495'},
+  {id:'e16', name:'אניה לונדון',        phone:''},
+  {id:'e17', name:'טל גולדשטיין',       phone:'054-5707510'},
+  {id:'e18', name:'חגית סלמן',          phone:''},
+  {id:'e19', name:'שירי שרוני מדליון',  phone:''},
+];
+
+// seed data taken from the uploaded spreadsheet, only applied if the
+// computed "current week" happens to be the week of 06–10/09/2026
+const SEED_WEEK_START = '2026-09-06';
+const SEED_SCHEDULE = {
+  e1:  {'2026-09-07':{status:'training'}},
+  e2:  {'2026-09-07':{status:'training'}, '2026-09-08':{status:'field'}},
+  e4:  {'2026-09-08':{status:'absent'}, '2026-09-09':{status:'vacation'}, '2026-09-10':{status:'vacation'}},
+  e5:  {'2026-09-10':{status:'home'}},
+  e6:  {'2026-09-10':{status:'absent'}},
+  e7:  {'2026-09-06':{status:'late'}, '2026-09-08':{status:'home'}, '2026-09-09':{status:'home'}, '2026-09-10':{status:'late'}},
+  e8:  {'2026-09-07':{status:'sick'}, '2026-09-08':{status:'sick'}},
+  e9:  {'2026-09-08':{status:'home'}},
+  e10: {'2026-09-10':{status:'vacation'}},
+  e11: {'2026-09-08':{status:'home'}},
+  e12: {'2026-09-08':{status:'vacation'}},
+  e14: {'2026-09-09':{status:'home'}},
+  e15: {'2026-09-10':{status:'home'}},
+  e16: {'2026-09-06':{status:'child_sick'}, '2026-09-07':{status:'absent'}},
+  e17: {'2026-09-08':{status:'home'}},
+};
+
+/* ===================== STATE ===================== */
+let state = {
+  loading:true,
+  role:'employee',       // 'manager' | 'employee' — home screen is always employees
+  employees:[],
+  scheduleByWeek:{},     // { weekStartISO: { empId: { dateISO: {status, note} } } }
+  messages:[],
+  managerTab:'current',  // current | next | messages | employees
+  employeeTab:'schedule',// schedule | nextweek | messages
+  employeeDay:null,      // dateISO
+  editing:null,          // {empId, dateISO, status, note}
+  pinPrompt:false,
+  pinValue:'',
+  pinError:false,
+  toast:null,
+};
+
+/* ===================== DATE HELPERS ===================== */
+function toISO(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`; }
+function getSunday(date){ const d=new Date(date); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); return d; }
+function addDays(iso,n){ const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return toISO(d); }
+function weekDates(weekStartISO){ return [0,1,2,3,4].map(n=>addDays(weekStartISO,n)); }
+function fmtShort(iso){ const d=new Date(iso+'T00:00:00'); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
+function todayISO(){ return toISO(new Date()); }
+const CURRENT_WEEK_START = toISO(getSunday(new Date()));
+const NEXT_WEEK_START = addDays(CURRENT_WEEK_START,7);
+
+/* ===================== STORAGE (Google Sheets via /api/kv) ===================== */
+async function kvGet(key){
+  try{
+    const r = await fetch('/api/kv?key='+encodeURIComponent(key));
+    if(!r.ok) return null;
+    const d = await r.json();
+    return (d && d.value!=null) ? d.value : null;
+  }catch(e){ console.error(e); return null; }
+}
+async function kvSet(key, value){
+  try{
+    const r = await fetch('/api/kv', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({key, value})
+    });
+    return r.ok;
+  }catch(e){ console.error(e); return false; }
+}
+
+async function loadAll(){
+  const empVal = await kvGet('employees');
+  state.employees = empVal ? JSON.parse(empVal) : null;
+  if(!state.employees){
+    state.employees = DEFAULT_EMPLOYEES;
+    await kvSet('employees', JSON.stringify(state.employees));
+  }
+
+  for(const ws of [CURRENT_WEEK_START, NEXT_WEEK_START]){
+    await loadWeek(ws);
+  }
+  if(CURRENT_WEEK_START === SEED_WEEK_START && Object.keys(state.scheduleByWeek[CURRENT_WEEK_START]||{}).length===0){
+    state.scheduleByWeek[CURRENT_WEEK_START] = SEED_SCHEDULE;
+    await saveWeek(CURRENT_WEEK_START);
+  }
+
+  const msgVal = await kvGet('messages');
+  state.messages = msgVal ? JSON.parse(msgVal) : [];
+
+  state.employeeDay = pickDefaultEmployeeDay();
+  state.loading = false;
+  render();
+}
+async function loadWeek(weekStartISO){
+  const val = await kvGet('schedule:'+weekStartISO);
+  state.scheduleByWeek[weekStartISO] = val ? JSON.parse(val) : {};
+}
+async function saveWeek(weekStartISO){
+  const ok = await kvSet('schedule:'+weekStartISO, JSON.stringify(state.scheduleByWeek[weekStartISO]));
+  if(!ok) showToast('שגיאה בשמירה — בדקו חיבור לאינטרנט');
+}
+async function saveEmployees(){
+  const ok = await kvSet('employees', JSON.stringify(state.employees));
+  if(!ok) showToast('שגיאה בשמירה — בדקו חיבור לאינטרנט');
+}
+async function saveMessages(){
+  const ok = await kvSet('messages', JSON.stringify(state.messages));
+  if(!ok) showToast('שגיאה בשמירה — בדקו חיבור לאינטרנט');
+}
+function setRole(role){
+  state.role = role;
+  render();
+}
+
+function pickDefaultEmployeeDay(){
+  const dates = weekDates(CURRENT_WEEK_START);
+  return dates.includes(todayISO()) ? todayISO() : dates[0];
+}
+
+/* ===================== TOAST ===================== */
+let toastTimer=null;
+function showToast(msg){
+  state.toast = msg;
+  render();
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ state.toast=null; render(); }, 2200);
+}
+
+/* ===================== RENDER ROOT ===================== */
+function render(){
+  const app = document.getElementById('app');
+  if(state.loading){ app.innerHTML = `<div class="empty-state">טוען…</div>`; return; }
+
+  let html = '';
+  html += renderTopbar();
+  html += state.role==='manager' ? renderManager() : renderEmployee();
+  if(state.toast) html += `<div class="toast show">${escapeHtml(state.toast)}</div>`;
+  if(state.editing) html += renderEditModal();
+  if(state.pinPrompt) html += renderPinModal();
+
+  app.innerHTML = html;
+  attachHandlers();
+}
+
+function renderTopbar(){
+  const rightSide = state.role==='manager'
+    ? `<div class="role-pill"><span class="tag">מצב ניהול</span><button data-action="exit-manager">חזרה לעובדים</button></div>`
+    : `<div class="role-pill"><button data-action="enter-manager">מעבר לניהול</button></div>`;
+  return `
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">${svgMark()}</div>
+      <div>
+        <div class="brand-title">לוח נוכחות</div>
+        <div class="brand-sub">${new Date().toLocaleDateString('he-IL',{weekday:'long',day:'numeric',month:'long'})}</div>
+      </div>
+    </div>
+    ${rightSide}
+  </div>`;
+}
+function svgMark(){
+  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 10.5L9.5 16L20 5" stroke="white" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+/* ===================== MANAGER VIEW ===================== */
+function renderManager(){
+  const tabs = [
+    {id:'current', label:'השבוע הנוכחי'},
+    {id:'next', label:'השבוע הבא'},
+    {id:'messages', label:'הודעות'},
+    {id:'employees', label:'עובדים'},
+  ];
+  let html = `<div class="tabs">${tabs.map(t=>`<button class="tab-btn ${state.managerTab===t.id?'active':''}" data-action="mgr-tab" data-tab="${t.id}">${t.label}</button>`).join('')}</div>`;
+
+  if(state.managerTab==='current') html += renderManagerGrid(CURRENT_WEEK_START, 'השבוע הנוכחי');
+  else if(state.managerTab==='next') html += renderManagerGrid(NEXT_WEEK_START, 'השבוע הבא');
+  else if(state.managerTab==='messages') html += renderMessagesPanel(true);
+  else if(state.managerTab==='employees') html += renderEmployeesPanel();
+
+  return html;
+}
+
+function renderManagerGrid(weekStart, title, editable=true){
+  const dates = weekDates(weekStart);
+  const schedule = state.scheduleByWeek[weekStart] || {};
+  const totals = dates.map(dt => state.employees.reduce((n,e)=>{
+    const entry = schedule[e.id]?.[dt];
+    return n + (entry && entry.status ? 1 : 0);
+  },0));
+
+  const rows = state.employees.map(e=>{
+    const cells = dates.map(dt=>{
+      const entry = schedule[e.id]?.[dt];
+      const inner = entry && entry.status
+        ? `<span class="status-chip" style="background:${STATUS_MAP[entry.status].color}">${STATUS_MAP[entry.status].label}</span>${entry.note?`<span class="cell-note">${escapeHtml(entry.note)}</span>`:''}`
+        : `<span class="status-chip empty">—</span>`;
+      const cellAttrs = editable ? `data-action="edit-cell" data-emp="${e.id}" data-date="${dt}" data-week="${weekStart}"` : '';
+      return `<td class="cell${editable?'':' readonly'}" ${cellAttrs}>${inner}</td>`;
+    }).join('');
+    return `<tr><td class="name-cell">${escapeHtml(e.name)}</td>${cells}</tr>`;
+  }).join('');
+
+  return `
+  <div class="panel">
+    <div class="panel-title"><span>${title}</span><span class="muted">${fmtShort(dates[0])}–${fmtShort(dates[4])}</span></div>
+    <div class="grid-scroll">
+      <table class="grid">
+        <thead><tr>
+          <th></th>
+          ${dates.map((dt,i)=>{
+            const isHoliday = dayAllHoliday(schedule, dt);
+            const holidayBtn = editable ? `<button class="day-holiday-btn ${isHoliday?'active':''}" data-action="toggle-holiday-day" data-date="${dt}" data-week="${weekStart}">${isHoliday?'✓ חג':'סמן חג'}</button>` : (isHoliday?`<span class="day-holiday-btn active">✓ חג</span>`:'');
+            return `<th class="${dt===todayISO()?'today-col':''}">${DAY_NAMES[i]}<br>${fmtShort(dt)}${holidayBtn}</th>`;
+          }).join('')}
+        </tr></thead>
+        <tbody>${rows || `<tr><td colspan="6" class="muted" style="padding:20px;">אין עובדים ברשימה עדיין${editable?' — הוסיפו בלשונית "עובדים"':''}</td></tr>`}</tbody>
+        <tfoot><tr class="totals"><td class="name-cell">נעדרים</td>${totals.map(n=>`<td>${n}</td>`).join('')}</tr></tfoot>
+      </table>
+    </div>
+    ${editable ? `<div class="muted" style="margin-top:12px;">לחיצה על תא פותחת עריכה — בחירת סיבת היעדרות והוספת הערה קצרה.</div>` : `<div class="muted" style="margin-top:12px;">תצוגה בלבד — לשינויים יש לפנות למנהל/ת הצוות.</div>`}
+  </div>`;
+}
+
+function renderEditModal(){
+  const {empId, dateISO} = state.editing;
+  const emp = state.employees.find(e=>e.id===empId);
+  const dIdx = weekDates(getWeekStartForDate(dateISO)).indexOf(dateISO);
+  const chips = STATUSES.map(s=>`<button class="chip-opt ${state.editing.status===s.id?'selected':''}" style="background:${s.color}" data-action="pick-status" data-id="${s.id}">${s.label}</button>`).join('');
+  return `
+  <div class="overlay" data-action="close-modal-bg">
+    <div class="modal" data-stop>
+      <h3>${escapeHtml(emp? emp.name:'')}</h3>
+      <div class="sub">${DAY_NAMES[dIdx]}, ${fmtShort(dateISO)}</div>
+      <div class="chip-grid">
+        ${chips}
+        <button class="chip-opt clear" data-action="pick-status" data-id="">נקה שיבוץ</button>
+      </div>
+      <input class="note" type="text" placeholder="הערה קצרה (לא חובה)" value="${escapeHtml(state.editing.note||'')}" data-action="note-input">
+      <div class="modal-actions">
+        <button class="cancel" data-action="cancel-edit">ביטול</button>
+        <button class="save" data-action="save-edit">שמירה</button>
+      </div>
+    </div>
+  </div>`;
+}
+function dayAllHoliday(schedule, dateISO){
+  return state.employees.length>0 && state.employees.every(e=>schedule[e.id]?.[dateISO]?.status==='holiday');
+}
+function getWeekStartForDate(dateISO){
+  return toISO(getSunday(new Date(dateISO+'T00:00:00')));
+}
+
+function renderPinModal(){
+  return `
+  <div class="overlay" data-action="close-pin-bg">
+    <div class="modal" data-stop>
+      <h3>כניסת מנהל/ת</h3>
+      <div class="sub">הזינו קוד כניסה</div>
+      <input class="note" type="password" inputmode="numeric" placeholder="קוד" value="${escapeHtml(state.pinValue)}" data-action="pin-input" style="${state.pinError?'border-color:#A33B34;':''}">
+      ${state.pinError?'<div class="muted" style="color:#A33B34;margin-top:-10px;margin-bottom:14px;">קוד שגוי, נסו שוב</div>':''}
+      <div class="modal-actions">
+        <button class="cancel" data-action="cancel-pin">ביטול</button>
+        <button class="save" data-action="submit-pin">כניסה</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------- employees management ---------- */
+function renderEmployeesPanel(){
+  const rows = state.employees.map(e=>`
+    <div class="emp-row">
+      <input class="ename" value="${escapeHtml(e.name)}" data-action="emp-name" data-id="${e.id}">
+      <input class="ephone" value="${escapeHtml(e.phone||'')}" placeholder="טלפון" data-action="emp-phone" data-id="${e.id}">
+      <button class="icon-btn" data-action="emp-remove" data-id="${e.id}" title="הסרה">✕</button>
+    </div>`).join('');
+  return `
+  <div class="panel">
+    <div class="panel-title"><span>רשימת עובדים</span><span class="muted">${state.employees.length} עובדים</span></div>
+    ${rows}
+    <div class="add-emp">
+      <input id="new-emp-name" placeholder="שם עובד/ת חדש/ה">
+      <input id="new-emp-phone" placeholder="טלפון" style="direction:ltr;text-align:right;max-width:150px;">
+      <button class="btn-primary" data-action="emp-add">הוספה</button>
+    </div>
+  </div>`;
+}
+
+/* ===================== MESSAGES ===================== */
+function renderMessagesPanel(isManager){
+  const list = [...state.messages].sort((a,b)=>b.createdAt-a.createdAt);
+  const listHtml = list.length ? list.map(m=>`
+    <div class="msg-item">
+      ${isManager?`<button class="icon-btn mdel" data-action="msg-delete" data-id="${m.id}" title="מחיקה">✕</button>`:''}
+      <div class="mtext">${escapeHtml(m.text)}</div>
+      <div class="mmeta">${new Date(m.createdAt).toLocaleString('he-IL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
+    </div>`).join('') : `<div class="empty-state"><div class="big">🗒️</div>אין הודעות עדיין</div>`;
+
+  return `
+  <div class="panel">
+    <div class="panel-title"><span>הודעות מההנהלה</span></div>
+    ${isManager?`
+    <div class="msg-compose">
+      <textarea id="msg-text" placeholder="כתבו הודעה לכל הצוות…"></textarea>
+      <div style="text-align:left;margin-top:10px;">
+        <button class="btn-primary" data-action="msg-send">שליחת הודעה לכולם</button>
+      </div>
+    </div>`:''}
+    <div class="msg-list">${listHtml}</div>
+  </div>`;
+}
+
+/* ===================== EMPLOYEE VIEW ===================== */
+function renderEmployee(){
+  const tabs = `<div class="tabs">
+    <button class="tab-btn ${state.employeeTab==='schedule'?'active':''}" data-action="emp-tab" data-tab="schedule">השבוע הנוכחי</button>
+    <button class="tab-btn ${state.employeeTab==='next'?'active':''}" data-action="emp-tab" data-tab="next">השבוע הבא</button>
+    <button class="tab-btn ${state.employeeTab==='messages'?'active':''}" data-action="emp-tab" data-tab="messages">הודעות${state.messages.length?` (${state.messages.length})`:''}</button>
+  </div>`;
+
+  if(state.employeeTab==='messages') return tabs + renderMessagesPanel(false);
+  if(state.employeeTab==='next') return tabs + renderManagerGrid(NEXT_WEEK_START, 'השבוע הבא', false);
+
+  const dates = weekDates(CURRENT_WEEK_START);
+  const dayChips = `<div class="tabs">${dates.map((dt,i)=>`
+    <div class="day-chip ${state.employeeDay===dt?'active':''} ${dt===todayISO()?'today':''}" data-action="pick-day" data-date="${dt}">
+      <span class="dn">${DAY_NAMES[i]}</span><span class="dd">${fmtShort(dt)}</span>
+    </div>`).join('')}</div>`;
+
+  return tabs + dayChips + renderDayPanel(state.employeeDay);
+}
+
+function renderDayPanel(dateISO){
+  const schedule = state.scheduleByWeek[CURRENT_WEEK_START] || {};
+  const absentees = [];
+  const inOffice = [];
+  state.employees.forEach(e=>{
+    const entry = schedule[e.id]?.[dateISO];
+    if(entry && entry.status) absentees.push({emp:e, entry});
+    else inOffice.push(e);
+  });
+  const dIdx = weekDates(CURRENT_WEEK_START).indexOf(dateISO);
+  const dayLabel = `יום ${DAY_NAMES[dIdx]}, ${fmtShort(dateISO)}`;
+
+  let body;
+  if(absentees.length===0){
+    body = `<div class="empty-state"><div class="big">✓</div>כולם בעבודה ${dateISO===todayISO()?'היום':'ביום זה'}</div>`;
+  } else {
+    body = `<div class="absentee-list">${absentees.map(({emp,entry})=>`
+      <div class="absentee-row">
+        <div>
+          <div class="who">${escapeHtml(emp.name)}</div>
+          ${entry.note?`<div class="note">${escapeHtml(entry.note)}</div>`:''}
+        </div>
+        <span class="status-chip" style="background:${STATUS_MAP[entry.status].color}">${STATUS_MAP[entry.status].label}</span>
+      </div>`).join('')}</div>`;
+  }
+
+  const officeHtml = inOffice.length ? `
+    <div class="muted" style="margin-top:18px;margin-bottom:6px;">בעבודה כרגיל</div>
+    <div class="in-office-list">${inOffice.map(e=>`<span>${escapeHtml(e.name)}</span>`).join('')}</div>` : '';
+
+  return `
+  <div class="panel">
+    <div class="day-summary">
+      <span class="count">${absentees.length}</span>
+      <span class="label">נעדרים ב${dayLabel}</span>
+    </div>
+    ${body}
+    ${officeHtml}
+  </div>`;
+}
+
+/* ===================== EVENT HANDLING ===================== */
+function attachHandlers(){
+  const app = document.getElementById('app');
+
+  app.onclick = async (ev)=>{
+    const t = ev.target.closest('[data-action]');
+    if(!t) return;
+    // ignore clicks that bubbled up from inside the modal to the overlay backdrop
+    if(t.classList.contains('overlay') && ev.target !== t) return;
+    const action = t.dataset.action;
+    if(action==='close-modal-bg'){ state.editing=null; render(); return; }
+    if(action==='close-pin-bg'){ state.pinPrompt=false; state.pinValue=''; state.pinError=false; render(); return; }
+
+    if(action==='enter-manager'){ state.pinPrompt=true; state.pinValue=''; state.pinError=false; render(); }
+    else if(action==='exit-manager'){ setRole('employee'); }
+    else if(action==='cancel-pin'){ state.pinPrompt=false; state.pinValue=''; state.pinError=false; render(); }
+    else if(action==='submit-pin'){
+      if(state.pinValue===MANAGER_PIN){ state.pinPrompt=false; state.pinError=false; setRole('manager'); }
+      else { state.pinError=true; render(); }
+    }
+    else if(action==='mgr-tab'){ state.managerTab=t.dataset.tab; render(); }
+    else if(action==='emp-tab'){ state.employeeTab=t.dataset.tab; render(); }
+    else if(action==='pick-day'){ state.employeeDay=t.dataset.date; render(); }
+    else if(action==='edit-cell'){
+      const empId=t.dataset.emp, dateISO=t.dataset.date, week=t.dataset.week;
+      const existing = state.scheduleByWeek[week]?.[empId]?.[dateISO];
+      state.editing = {empId, dateISO, week, status: existing?.status || null, note: existing?.note || ''};
+      render();
+    }
+    else if(action==='pick-status'){ state.editing.status = t.dataset.id || null; render(); }
+    else if(action==='cancel-edit'){ state.editing=null; render(); }
+    else if(action==='save-edit'){
+      const {empId, dateISO, week, status, note} = state.editing;
+      if(!state.scheduleByWeek[week]) state.scheduleByWeek[week]={};
+      if(!state.scheduleByWeek[week][empId]) state.scheduleByWeek[week][empId]={};
+      if(status){ state.scheduleByWeek[week][empId][dateISO] = {status, note: (note||'').trim()}; }
+      else { delete state.scheduleByWeek[week][empId][dateISO]; }
+      state.editing=null;
+      render();
+      await saveWeek(week);
+      showToast('נשמר');
+    }
+    else if(action==='toggle-holiday-day'){
+      const dateISO=t.dataset.date, week=t.dataset.week;
+      if(!state.scheduleByWeek[week]) state.scheduleByWeek[week]={};
+      const schedule = state.scheduleByWeek[week];
+      const allHoliday = dayAllHoliday(schedule, dateISO);
+      state.employees.forEach(e=>{
+        if(!schedule[e.id]) schedule[e.id]={};
+        if(allHoliday){ delete schedule[e.id][dateISO]; }
+        else { schedule[e.id][dateISO] = {status:'holiday'}; }
+      });
+      render();
+      await saveWeek(week);
+      showToast(allHoliday ? 'החג בוטל' : 'סומן חג לכל הצוות ביום זה');
+    }
+    else if(action==='emp-remove'){
+      const id=t.dataset.id;
+      if(confirm('להסיר את העובד/ת מהרשימה?')){
+        state.employees = state.employees.filter(e=>e.id!==id);
+        render();
+        await saveEmployees();
+        showToast('הוסר/ה');
+      }
+    }
+    else if(action==='emp-add'){
+      const nameEl=document.getElementById('new-emp-name'), phoneEl=document.getElementById('new-emp-phone');
+      const name=nameEl.value.trim();
+      if(!name){ nameEl.focus(); return; }
+      state.employees.push({id:'e'+Date.now(), name, phone:phoneEl.value.trim()});
+      render();
+      await saveEmployees();
+      showToast('נוסף/ה');
+    }
+    else if(action==='msg-send'){
+      const el = document.getElementById('msg-text');
+      const text = el.value.trim();
+      if(!text) return;
+      state.messages.push({id:'m'+Date.now(), text, createdAt: Date.now()});
+      render();
+      await saveMessages();
+      showToast('ההודעה נשלחה');
+    }
+    else if(action==='msg-delete'){
+      state.messages = state.messages.filter(m=>m.id!==t.dataset.id);
+      render();
+      await saveMessages();
+    }
+  };
+
+  app.oninput = (ev)=>{
+    const t = ev.target.closest('[data-action]');
+    if(!t) return;
+    const action = t.dataset.action;
+    if(action==='note-input'){ state.editing.note = t.value; }
+    else if(action==='pin-input'){ state.pinValue = t.value; state.pinError=false; }
+    else if(action==='emp-name'){ const e=state.employees.find(x=>x.id===t.dataset.id); if(e) e.name=t.value; }
+    else if(action==='emp-phone'){ const e=state.employees.find(x=>x.id===t.dataset.id); if(e) e.phone=t.value; }
+  };
+
+  app.onchange = async (ev)=>{
+    const t = ev.target.closest('[data-action]');
+    if(!t) return;
+    if(t.dataset.action==='emp-name' || t.dataset.action==='emp-phone'){ await saveEmployees(); }
+  };
+
+  app.onkeydown = (ev)=>{
+    const t = ev.target.closest('[data-action]');
+    if(!t) return;
+    if(t.dataset.action==='pin-input' && ev.key==='Enter'){
+      ev.preventDefault();
+      document.querySelector('[data-action="submit-pin"]').click();
+    }
+  };
+}
+
+function escapeHtml(str){
+  return String(str==null?'':str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+loadAll();
+</script>
+</body>
+</html>
