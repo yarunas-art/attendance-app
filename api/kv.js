@@ -20,8 +20,17 @@ module.exports = async (req, res) => {
 
   try {
     if (req.method === 'GET') {
+      const keys = req.query.keys;
       const key = req.query.key;
-      if (!key) { res.status(400).json({ error: 'missing key' }); return; }
+
+      if (keys) {
+        const url = baseUrl + '?keys=' + encodeURIComponent(keys);
+        const r = await fetch(url, { redirect: 'follow' });
+        const data = await r.json();
+        res.status(200).json(data);
+        return;
+      }
+      if (!key) { res.status(400).json({ error: 'missing key or keys' }); return; }
       const url = baseUrl + '?key=' + encodeURIComponent(key);
       const r = await fetch(url, { redirect: 'follow' });
       const data = await r.json();

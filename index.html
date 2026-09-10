@@ -235,6 +235,7 @@ const SEED_SCHEDULE = {
 /* ===================== STATE ===================== */
 let state = {
   loading:true,
+  loadingTimeout:false,
   role:'employee',       // 'manager' | 'employee' — home screen is always employees
   employees:[],
   scheduleByWeek:{},     // { weekStartISO: { empId: { dateISO: {status, note} } } }
@@ -260,63 +261,115 @@ const CURRENT_WEEK_START = toISO(getSunday(new Date()));
 const NEXT_WEEK_START = addDays(CURRENT_WEEK_START,7);
 
 /* ===================== STORAGE (Google Sheets via /api/kv) ===================== */
-async function kvGet(key){
+function safeParseJSON(str, fallback){
+  if(!str) return fallback;
+  try{ return JSON.parse(str); }
+  catch(e){ console.error('JSON parse failed:', e); return fallback; }
+}
+
+async function kvGetMany(keys){
   try{
-    const r = await fetch('/api/kv?key='+encodeURIComponent(key));
-    if(!r.ok) return null;
+    const controller = new AbortController();
+    const t = setTimeout(()=>controller.abort(), 8000);
+    const r = await fetch('/api/kv?keys='+encodeURIComponent(keys.join(',')), {signal: controller.signal});
+    clearTimeout(t);
+    if(!r.ok) return {};
     const d = await r.json();
-    return (d && d.value!=null) ? d.value : null;
-  }catch(e){ console.error(e); return null; }
+    return (d && d.values) ? d.values : {};
+  }catch(e){ console.error(e); return {}; }
 }
 async function kvSet(key, value){
   try{
+    const controller = new AbortController();
+    const t = setTimeout(()=>controller.abort(), 8000);
     const r = await fetch('/api/kv', {
       method:'POST',
+      signal: controller.signal,
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({key, value})
     });
+    clearTimeout(t);
     return r.ok;
   }catch(e){ console.error(e); return false; }
 }
 
+/* ---- local cache: shows last-known data instantly, then refreshes from the sheet in the background ---- */
+const CACHE_KEY = 'att-cache-v1';
+function loadCache(){
+  try{ const raw = localStorage.getItem(CACHE_KEY); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
+}
+function saveCache(){
+  try{
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      employees: state.employees,
+      messages: state.messages,
+      scheduleByWeek: state.scheduleByWeek,
+    }));
+  }catch(e){}
+}
+
+let loadWatchdog = null;
 async function loadAll(){
-  const empVal = await kvGet('employees');
-  state.employees = empVal ? JSON.parse(empVal) : null;
+  const cached = loadCache();
+  if(cached){
+    state.employees = cached.employees || DEFAULT_EMPLOYEES;
+    state.messages = cached.messages || [];
+    state.scheduleByWeek = cached.scheduleByWeek || {};
+    state.employeeDay = pickDefaultEmployeeDay();
+    state.loading = false;
+    render();
+    refreshFromServer(); // quietly bring it up to date in the background
+    return;
+  }
+  loadWatchdog = setTimeout(()=>{ if(state.loading){ state.loadingTimeout = true; render(); } }, 10000);
+  await refreshFromServer();
+  clearTimeout(loadWatchdog);
+  state.loading = false;
+  state.loadingTimeout = false;
+  render();
+}
+
+async function refreshFromServer(){
+  const currentKey = 'schedule:'+CURRENT_WEEK_START, nextKey = 'schedule:'+NEXT_WEEK_START;
+  const values = await kvGetMany(['employees','messages', currentKey, nextKey]);
+
+  state.employees = safeParseJSON(values.employees, null);
   if(!state.employees){
     state.employees = DEFAULT_EMPLOYEES;
-    await kvSet('employees', JSON.stringify(state.employees));
+    kvSet('employees', JSON.stringify(state.employees));
   }
+  state.messages = safeParseJSON(values.messages, []);
+  state.scheduleByWeek[CURRENT_WEEK_START] = safeParseJSON(values[currentKey], {});
+  state.scheduleByWeek[NEXT_WEEK_START] = safeParseJSON(values[nextKey], {});
 
-  for(const ws of [CURRENT_WEEK_START, NEXT_WEEK_START]){
-    await loadWeek(ws);
-  }
   if(CURRENT_WEEK_START === SEED_WEEK_START && Object.keys(state.scheduleByWeek[CURRENT_WEEK_START]||{}).length===0){
     state.scheduleByWeek[CURRENT_WEEK_START] = SEED_SCHEDULE;
-    await saveWeek(CURRENT_WEEK_START);
+    saveWeek(CURRENT_WEEK_START);
   }
 
-  const msgVal = await kvGet('messages');
-  state.messages = msgVal ? JSON.parse(msgVal) : [];
-
-  state.employeeDay = pickDefaultEmployeeDay();
-  state.loading = false;
+  if(!state.employeeDay) state.employeeDay = pickDefaultEmployeeDay();
+  saveCache();
   render();
 }
 async function loadWeek(weekStartISO){
-  const val = await kvGet('schedule:'+weekStartISO);
-  state.scheduleByWeek[weekStartISO] = val ? JSON.parse(val) : {};
+  const values = await kvGetMany(['schedule:'+weekStartISO]);
+  state.scheduleByWeek[weekStartISO] = safeParseJSON(values['schedule:'+weekStartISO], {});
 }
 async function saveWeek(weekStartISO){
   const ok = await kvSet('schedule:'+weekStartISO, JSON.stringify(state.scheduleByWeek[weekStartISO]));
-  if(!ok) showToast('שגיאה בשמירה — בדקו חיבור לאינטרנט');
+  if(ok) saveCache();
+  else showToast('שגיאה בשמירה — בדקו חיבור לאינטרנט');
 }
 async function saveEmployees(){
   const ok = await kvSet('employees', JSON.stringify(state.employees));
-  if(!ok) showToast('שגיאה בשמירה — בדקו חיבור לאינטרנט');
+  if(ok) saveCache();
+  else showToast('שגיאה בשמירה — בדקו חיבור לאינטרנט');
 }
 async function saveMessages(){
   const ok = await kvSet('messages', JSON.stringify(state.messages));
-  if(!ok) showToast('שגיאה בשמירה — בדקו חיבור לאינטרנט');
+  if(ok) saveCache();
+  else showToast('שגיאה בשמירה — בדקו חיבור לאינטרנט');
 }
 function setRole(role){
   state.role = role;
@@ -340,7 +393,13 @@ function showToast(msg){
 /* ===================== RENDER ROOT ===================== */
 function render(){
   const app = document.getElementById('app');
-  if(state.loading){ app.innerHTML = `<div class="empty-state">טוען…</div>`; return; }
+  if(state.loading){
+    app.innerHTML = state.loadingTimeout
+      ? `<div class="empty-state"><div class="big">⏳</div>הטעינה אורכת יותר מהרגיל.<br>ייתכן שיש בעיה בחיבור.<div style="margin-top:14px;"><button class="btn-primary" data-action="retry-load">ניסיון נוסף</button></div></div>`
+      : `<div class="empty-state">טוען…</div>`;
+    attachHandlers();
+    return;
+  }
 
   let html = '';
   html += renderTopbar();
@@ -595,6 +654,7 @@ function attachHandlers(){
     if(action==='close-modal-bg'){ state.editing=null; render(); return; }
     if(action==='close-pin-bg'){ state.pinPrompt=false; state.pinValue=''; state.pinError=false; render(); return; }
 
+    if(action==='retry-load'){ location.reload(); return; }
     if(action==='enter-manager'){ state.pinPrompt=true; state.pinValue=''; state.pinError=false; render(); }
     else if(action==='exit-manager'){ setRole('employee'); }
     else if(action==='cancel-pin'){ state.pinPrompt=false; state.pinValue=''; state.pinError=false; render(); }
