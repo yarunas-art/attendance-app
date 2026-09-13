@@ -242,6 +242,7 @@ let state = {
   messages:[],
   managerTab:'current',  // current | next | messages | employees
   employeeTab:'schedule',// schedule | nextweek | messages
+  employeeWeeklyView:false, // toggles the current-week tab between day-by-day and a full week table
   employeeDay:null,      // dateISO
   editing:null,          // {empId, dateISO, status, note}
   pinPrompt:false,
@@ -270,18 +271,18 @@ function safeParseJSON(str, fallback){
 async function kvGetMany(keys){
   try{
     const controller = new AbortController();
-    const t = setTimeout(()=>controller.abort(), 8000);
+    const t = setTimeout(()=>controller.abort(), 12000);
     const r = await fetch('/api/kv?keys='+encodeURIComponent(keys.join(',')), {signal: controller.signal});
     clearTimeout(t);
-    if(!r.ok) return {};
+    if(!r.ok) return {ok:false, values:{}};
     const d = await r.json();
-    return (d && d.values) ? d.values : {};
-  }catch(e){ console.error(e); return {}; }
+    return {ok:true, values: (d && d.values) ? d.values : {}};
+  }catch(e){ console.error(e); return {ok:false, values:{}}; }
 }
 async function kvSet(key, value){
   try{
     const controller = new AbortController();
-    const t = setTimeout(()=>controller.abort(), 8000);
+    const t = setTimeout(()=>controller.abort(), 12000);
     const r = await fetch('/api/kv', {
       method:'POST',
       signal: controller.signal,
@@ -310,6 +311,7 @@ function saveCache(){
 }
 
 let loadWatchdog = null;
+let refreshing = false;
 async function loadAll(){
   const cached = loadCache();
   if(cached){
@@ -319,7 +321,7 @@ async function loadAll(){
     state.employeeDay = pickDefaultEmployeeDay();
     state.loading = false;
     render();
-    refreshFromServer(); // quietly bring it up to date in the background
+    refreshFromServer(); // quietly bring it up to date in the background — never destructive on failure
     return;
   }
   loadWatchdog = setTimeout(()=>{ if(state.loading){ state.loadingTimeout = true; render(); } }, 10000);
@@ -331,30 +333,49 @@ async function loadAll(){
 }
 
 async function refreshFromServer(){
-  const currentKey = 'schedule:'+CURRENT_WEEK_START, nextKey = 'schedule:'+NEXT_WEEK_START;
-  const values = await kvGetMany(['employees','messages', currentKey, nextKey]);
+  // never run two refreshes at once — avoids overlapping requests hammering Apps Script
+  if(refreshing) return;
+  refreshing = true;
+  try{
+    const currentKey = 'schedule:'+CURRENT_WEEK_START, nextKey = 'schedule:'+NEXT_WEEK_START;
+    const { ok, values } = await kvGetMany(['employees','messages', currentKey, nextKey]);
 
-  state.employees = safeParseJSON(values.employees, null);
-  if(!state.employees){
-    state.employees = DEFAULT_EMPLOYEES;
-    kvSet('employees', JSON.stringify(state.employees));
+    if(!ok){
+      // the fetch failed or timed out — keep whatever is already on screen, don't touch anything.
+      if(!state.employees || !state.employees.length) state.employees = DEFAULT_EMPLOYEES;
+      if(!state.employeeDay) state.employeeDay = pickDefaultEmployeeDay();
+      return;
+    }
+
+    // the fetch succeeded: a missing value here genuinely means "nothing saved yet", safe to seed
+    const employees = safeParseJSON(values.employees, null);
+    if(employees){
+      state.employees = employees;
+    } else if(!state.employees || !state.employees.length){
+      state.employees = DEFAULT_EMPLOYEES;
+      kvSet('employees', JSON.stringify(state.employees));
+    }
+
+    state.messages = safeParseJSON(values.messages, state.messages || []);
+    state.scheduleByWeek[CURRENT_WEEK_START] = safeParseJSON(values[currentKey], state.scheduleByWeek[CURRENT_WEEK_START] || {});
+    state.scheduleByWeek[NEXT_WEEK_START] = safeParseJSON(values[nextKey], state.scheduleByWeek[NEXT_WEEK_START] || {});
+
+    if(CURRENT_WEEK_START === SEED_WEEK_START && values[currentKey]==null && Object.keys(state.scheduleByWeek[CURRENT_WEEK_START]||{}).length===0){
+      state.scheduleByWeek[CURRENT_WEEK_START] = SEED_SCHEDULE;
+      saveWeek(CURRENT_WEEK_START);
+    }
+
+    if(!state.employeeDay) state.employeeDay = pickDefaultEmployeeDay();
+    saveCache();
+  } finally {
+    refreshing = false;
+    render();
   }
-  state.messages = safeParseJSON(values.messages, []);
-  state.scheduleByWeek[CURRENT_WEEK_START] = safeParseJSON(values[currentKey], {});
-  state.scheduleByWeek[NEXT_WEEK_START] = safeParseJSON(values[nextKey], {});
-
-  if(CURRENT_WEEK_START === SEED_WEEK_START && Object.keys(state.scheduleByWeek[CURRENT_WEEK_START]||{}).length===0){
-    state.scheduleByWeek[CURRENT_WEEK_START] = SEED_SCHEDULE;
-    saveWeek(CURRENT_WEEK_START);
-  }
-
-  if(!state.employeeDay) state.employeeDay = pickDefaultEmployeeDay();
-  saveCache();
-  render();
 }
 async function loadWeek(weekStartISO){
-  const values = await kvGetMany(['schedule:'+weekStartISO]);
-  state.scheduleByWeek[weekStartISO] = safeParseJSON(values['schedule:'+weekStartISO], {});
+  const { ok, values } = await kvGetMany(['schedule:'+weekStartISO]);
+  if(!ok) return; // keep whatever was already there
+  state.scheduleByWeek[weekStartISO] = safeParseJSON(values['schedule:'+weekStartISO], state.scheduleByWeek[weekStartISO] || {});
 }
 async function saveWeek(weekStartISO){
   const ok = await kvSet('schedule:'+weekStartISO, JSON.stringify(state.scheduleByWeek[weekStartISO]));
@@ -415,7 +436,10 @@ function render(){
 function renderTopbar(){
   const rightSide = state.role==='manager'
     ? `<div class="role-pill"><span class="tag">מצב ניהול</span><button data-action="exit-manager">חזרה לעובדים</button></div>`
-    : `<div class="role-pill"><button data-action="enter-manager">מעבר לניהול</button></div>`;
+    : `<div class="role-pill">
+         <button data-action="toggle-weekly-view">${state.employeeWeeklyView ? 'תצוגה יומית' : 'תצוגה שבועית'}</button>
+         <button data-action="enter-manager">מעבר לניהול</button>
+       </div>`;
   return `
   <div class="topbar">
     <div class="brand">
@@ -591,6 +615,10 @@ function renderEmployee(){
   if(state.employeeTab==='messages') return tabs + renderMessagesPanel(false);
   if(state.employeeTab==='next') return tabs + renderManagerGrid(NEXT_WEEK_START, 'השבוע הבא', false);
 
+  if(state.employeeWeeklyView){
+    return tabs + renderManagerGrid(CURRENT_WEEK_START, 'השבוע הנוכחי', false);
+  }
+
   const dates = weekDates(CURRENT_WEEK_START);
   const dayChips = `<div class="tabs">${dates.map((dt,i)=>`
     <div class="day-chip ${state.employeeDay===dt?'active':''} ${dt===todayISO()?'today':''}" data-action="pick-day" data-date="${dt}">
@@ -657,6 +685,7 @@ function attachHandlers(){
     if(action==='retry-load'){ location.reload(); return; }
     if(action==='enter-manager'){ state.pinPrompt=true; state.pinValue=''; state.pinError=false; render(); }
     else if(action==='exit-manager'){ setRole('employee'); }
+    else if(action==='toggle-weekly-view'){ state.employeeWeeklyView = !state.employeeWeeklyView; render(); }
     else if(action==='cancel-pin'){ state.pinPrompt=false; state.pinValue=''; state.pinError=false; render(); }
     else if(action==='submit-pin'){
       if(state.pinValue===MANAGER_PIN){ state.pinPrompt=false; state.pinError=false; setRole('manager'); }
