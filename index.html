@@ -93,10 +93,12 @@
   table.grid th, table.grid td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:center;vertical-align:middle;}
   table.grid th{font-size:12.5px;color:var(--ink-soft);font-weight:700;}
   table.grid th.today-col{color:var(--accent);}
+  table.grid thead th{position:sticky;top:0;z-index:2;background:var(--surface);box-shadow:0 1px 0 var(--line);}
+  table.grid thead th.corner{right:0;z-index:3;}
   .day-holiday-btn{display:block;margin:6px auto 0;background:var(--surface-soft);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:10.5px;font-weight:700;color:var(--ink-soft);white-space:nowrap;}
   .day-holiday-btn:hover{background:var(--line);}
   .day-holiday-btn.active{background:#C1622C;border-color:#C1622C;color:#fff;}
-  table.grid td.name-cell{text-align:right;font-weight:600;font-size:13.5px;position:sticky;right:0;background:var(--surface);white-space:nowrap;}
+  table.grid td.name-cell{text-align:right;font-weight:600;font-size:13.5px;position:sticky;right:0;z-index:1;background:var(--surface);white-space:nowrap;}
   table.grid td.cell{cursor:pointer;min-width:92px;}
   table.grid td.cell:hover{background:var(--surface-soft);}
   table.grid td.cell.readonly{cursor:default;}
@@ -104,6 +106,7 @@
   .status-chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700;color:#fff;line-height:1.3;}
   .status-chip.empty{background:transparent;color:var(--ink-faint);font-weight:600;}
   .cell-note{display:block;font-size:10.5px;color:var(--ink-soft);margin-top:3px;font-weight:400;}
+  .cell-note.phone{direction:ltr;unicode-bidi:embed;}
   tr.totals td{font-weight:700;font-size:12px;color:var(--ink-soft);border-bottom:none;padding-top:12px;}
 
   /* ---------- employee day view ---------- */
@@ -114,8 +117,12 @@
   .absentee-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface-soft);border-radius:12px;padding:10px 14px;}
   .absentee-row .who{font-weight:700;font-size:14px;}
   .absentee-row .note{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .absentee-row .note.phone{direction:ltr;unicode-bidi:embed;display:inline-block;}
   .empty-state{text-align:center;padding:36px 10px;color:var(--ink-soft);}
   .empty-state .big{font-size:40px;margin-bottom:6px;}
+  .holiday-banner{text-align:center;padding:40px 10px;}
+  .holiday-banner .big{font-size:44px;margin-bottom:10px;}
+  .holiday-banner .txt{font-size:19px;font-weight:700;color:#C1622C;font-family:'Frank Ruhl Libre',serif;}
   .in-office-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
   .in-office-list span{background:var(--primary-tint);color:var(--primary-dark);border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:600;}
 
@@ -485,8 +492,10 @@ function renderManagerGrid(weekStart, title, editable=true){
   const rows = state.employees.map(e=>{
     const cells = dates.map(dt=>{
       const entry = schedule[e.id]?.[dt];
+      const noteLine = entry && entry.note ? `<span class="cell-note">${escapeHtml(entry.note)}</span>` : '';
+      const phoneLine = entry && entry.status==='home' && e.phone ? `<span class="cell-note phone">${escapeHtml(e.phone)}</span>` : '';
       const inner = entry && entry.status
-        ? `<span class="status-chip" style="background:${STATUS_MAP[entry.status].color}">${STATUS_MAP[entry.status].label}</span>${entry.note?`<span class="cell-note">${escapeHtml(entry.note)}</span>`:''}`
+        ? `<span class="status-chip" style="background:${STATUS_MAP[entry.status].color}">${STATUS_MAP[entry.status].label}</span>${noteLine}${phoneLine}`
         : `<span class="status-chip empty">—</span>`;
       const cellAttrs = editable ? `data-action="edit-cell" data-emp="${e.id}" data-date="${dt}" data-week="${weekStart}"` : '';
       return `<td class="cell${editable?'':' readonly'}" ${cellAttrs}>${inner}</td>`;
@@ -500,7 +509,7 @@ function renderManagerGrid(weekStart, title, editable=true){
     <div class="grid-scroll">
       <table class="grid">
         <thead><tr>
-          <th></th>
+          <th class="corner"></th>
           ${dates.map((dt,i)=>{
             const isHoliday = dayAllHoliday(schedule, dt);
             const holidayBtn = editable ? `<button class="day-holiday-btn ${isHoliday?'active':''}" data-action="toggle-holiday-day" data-date="${dt}" data-week="${weekStart}">${isHoliday?'✓ חג':'סמן חג'}</button>` : (isHoliday?`<span class="day-holiday-btn active">✓ חג</span>`:'');
@@ -630,6 +639,16 @@ function renderEmployee(){
 
 function renderDayPanel(dateISO){
   const schedule = state.scheduleByWeek[CURRENT_WEEK_START] || {};
+  const dIdx = weekDates(CURRENT_WEEK_START).indexOf(dateISO);
+  const dayLabel = `יום ${DAY_NAMES[dIdx]}, ${fmtShort(dateISO)}`;
+
+  if(dayAllHoliday(schedule, dateISO)){
+    return `
+    <div class="panel">
+      <div class="holiday-banner"><div class="big">🎉</div><div class="txt">חג — אין עובדים</div></div>
+    </div>`;
+  }
+
   const absentees = [];
   const inOffice = [];
   state.employees.forEach(e=>{
@@ -637,8 +656,6 @@ function renderDayPanel(dateISO){
     if(entry && entry.status) absentees.push({emp:e, entry});
     else inOffice.push(e);
   });
-  const dIdx = weekDates(CURRENT_WEEK_START).indexOf(dateISO);
-  const dayLabel = `יום ${DAY_NAMES[dIdx]}, ${fmtShort(dateISO)}`;
 
   let body;
   if(absentees.length===0){
@@ -649,6 +666,7 @@ function renderDayPanel(dateISO){
         <div>
           <div class="who">${escapeHtml(emp.name)}</div>
           ${entry.note?`<div class="note">${escapeHtml(entry.note)}</div>`:''}
+          ${entry.status==='home' && emp.phone?`<div class="note phone">📞 ${escapeHtml(emp.phone)}</div>`:''}
         </div>
         <span class="status-chip" style="background:${STATUS_MAP[entry.status].color}">${STATUS_MAP[entry.status].label}</span>
       </div>`).join('')}</div>`;
