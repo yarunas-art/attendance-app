@@ -126,6 +126,12 @@
   .in-office-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;}
   .in-office-list span{background:var(--primary-tint);color:var(--primary-dark);border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:600;}
 
+  /* ---------- edit mode (employees) ---------- */
+  .topbar{flex-wrap:wrap;}
+  .editor-rules{background:var(--primary-tint);color:var(--primary-dark);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.8;}
+  .editor-rules b{display:block;margin-bottom:2px;}
+  .chip-opt.blocked{opacity:.3;}
+
   /* ---------- employees management ---------- */
   .emp-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);}
   .emp-row:last-child{border-bottom:none;}
@@ -134,6 +140,11 @@
   .emp-row input.ephone{flex:1;direction:ltr;text-align:right;}
   .icon-btn{background:transparent;border:none;color:var(--ink-faint);font-size:16px;padding:6px;border-radius:8px;}
   .icon-btn:hover{background:var(--surface-soft);color:var(--danger);}
+  .emp-reorder{display:flex;flex-direction:column;gap:1px;}
+  .emp-reorder .icon-btn{font-size:10px;padding:2px 7px;color:var(--ink-soft);}
+  .emp-reorder .icon-btn:hover{color:var(--primary);}
+  .emp-reorder .icon-btn:disabled{opacity:.25;}
+  .emp-reorder .icon-btn:disabled:hover{background:transparent;color:var(--ink-soft);}
   .add-emp{display:flex;gap:10px;margin-top:14px;}
   .add-emp input{flex:1;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:13.5px;}
   .btn-primary{background:var(--primary);color:#fff;border:none;border-radius:10px;padding:9px 18px;font-size:13.5px;font-weight:700;}
@@ -248,15 +259,18 @@ let state = {
   scheduleByWeek:{},     // { weekStartISO: { empId: { dateISO: {status, note} } } }
   messages:[],
   managerTab:'current',  // current | next | messages | employees
-  employeeTab:'schedule',// schedule | nextweek | messages
+  employeeTab:'schedule',// schedule | nextweek | wfh | messages
   employeeWeeklyView:false, // toggles the current-week tab between day-by-day and a full week table
   employeeDay:null,      // dateISO
+  editorTab:'current',   // current | next (employee edit mode)
   editing:null,          // {empId, dateISO, status, note}
   pinPrompt:false,
   pinValue:'',
   pinError:false,
   toast:null,
 };
+const WFH_DAILY_CAP = 3;   // max employees working from home on any single day (edit mode only, manager is exempt)
+const WFH_WEEKLY_CAP = 1;  // max WFH days per employee, per week (edit mode only, manager is exempt)
 
 /* ===================== DATE HELPERS ===================== */
 function toISO(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`; }
@@ -384,6 +398,11 @@ async function loadWeek(weekStartISO){
   if(!ok) return; // keep whatever was already there
   state.scheduleByWeek[weekStartISO] = safeParseJSON(values['schedule:'+weekStartISO], state.scheduleByWeek[weekStartISO] || {});
 }
+async function fetchWeekFresh(weekStartISO){
+  const { ok, values } = await kvGetMany(['schedule:'+weekStartISO]);
+  if(!ok) return null; // could not reach the sheet
+  return safeParseJSON(values['schedule:'+weekStartISO], {});
+}
 async function saveWeek(weekStartISO){
   const ok = await kvSet('schedule:'+weekStartISO, JSON.stringify(state.scheduleByWeek[weekStartISO]));
   if(ok) saveCache();
@@ -431,7 +450,7 @@ function render(){
 
   let html = '';
   html += renderTopbar();
-  html += state.role==='manager' ? renderManager() : renderEmployee();
+  html += state.role==='manager' ? renderManager() : state.role==='editor' ? renderEditor() : renderEmployee();
   if(state.toast) html += `<div class="toast show">${escapeHtml(state.toast)}</div>`;
   if(state.editing) html += renderEditModal();
   if(state.pinPrompt) html += renderPinModal();
@@ -443,8 +462,11 @@ function render(){
 function renderTopbar(){
   const rightSide = state.role==='manager'
     ? `<div class="role-pill"><span class="tag">מצב ניהול</span><button data-action="exit-manager">חזרה לעובדים</button></div>`
+    : state.role==='editor'
+    ? `<div class="role-pill"><span class="tag">מצב עריכה</span><button data-action="exit-editor">חזרה לצפייה</button></div>`
     : `<div class="role-pill">
          <button data-action="toggle-weekly-view">${state.employeeWeeklyView ? 'תצוגה יומית' : 'תצוגה שבועית'}</button>
+         <button data-action="enter-editor">עריכה</button>
          <button data-action="enter-manager">מעבר לניהול</button>
        </div>`;
   return `
@@ -481,7 +503,7 @@ function renderManager(){
   return html;
 }
 
-function renderManagerGrid(weekStart, title, editable=true){
+function renderManagerGrid(weekStart, title, editable=true, isEditor=false){
   const dates = weekDates(weekStart);
   const schedule = state.scheduleByWeek[weekStart] || {};
   const totals = dates.map(dt => state.employees.reduce((n,e)=>{
@@ -503,6 +525,8 @@ function renderManagerGrid(weekStart, title, editable=true){
     return `<tr><td class="name-cell">${escapeHtml(e.name)}</td>${cells}</tr>`;
   }).join('');
 
+  const homeRow = isEditor ? `<tr class="totals"><td class="name-cell">מהבית</td>${dates.map(dt=>`<td>${countHome(schedule, dt)}/${WFH_DAILY_CAP}</td>`).join('')}</tr>` : '';
+
   return `
   <div class="panel">
     <div class="panel-title"><span>${title}</span><span class="muted">${fmtShort(dates[0])}–${fmtShort(dates[4])}</span></div>
@@ -512,15 +536,17 @@ function renderManagerGrid(weekStart, title, editable=true){
           <th class="corner"></th>
           ${dates.map((dt,i)=>{
             const isHoliday = dayAllHoliday(schedule, dt);
-            const holidayBtn = editable ? `<button class="day-holiday-btn ${isHoliday?'active':''}" data-action="toggle-holiday-day" data-date="${dt}" data-week="${weekStart}">${isHoliday?'✓ חג':'סמן חג'}</button>` : (isHoliday?`<span class="day-holiday-btn active">✓ חג</span>`:'');
+            const holidayBtn = (editable && !isEditor)
+              ? `<button class="day-holiday-btn ${isHoliday?'active':''}" data-action="toggle-holiday-day" data-date="${dt}" data-week="${weekStart}">${isHoliday?'✓ חג':'סמן חג'}</button>`
+              : (isHoliday?`<span class="day-holiday-btn active">✓ חג</span>`:'');
             return `<th class="${dt===todayISO()?'today-col':''}">${DAY_NAMES[i]}<br>${fmtShort(dt)}${holidayBtn}</th>`;
           }).join('')}
         </tr></thead>
-        <tbody>${rows || `<tr><td colspan="6" class="muted" style="padding:20px;">אין עובדים ברשימה עדיין${editable?' — הוסיפו בלשונית "עובדים"':''}</td></tr>`}</tbody>
-        <tfoot><tr class="totals"><td class="name-cell">נעדרים</td>${totals.map(n=>`<td>${n}</td>`).join('')}</tr></tfoot>
+        <tbody>${rows || `<tr><td colspan="6" class="muted" style="padding:20px;">אין עובדים ברשימה עדיין${editable && !isEditor?' — הוסיפו בלשונית "עובדים"':''}</td></tr>`}</tbody>
+        <tfoot><tr class="totals"><td class="name-cell">נעדרים</td>${totals.map(n=>`<td>${n}</td>`).join('')}</tr>${homeRow}</tfoot>
       </table>
     </div>
-    ${editable ? `<div class="muted" style="margin-top:12px;">לחיצה על תא פותחת עריכה — בחירת סיבת היעדרות והוספת הערה קצרה.</div>` : `<div class="muted" style="margin-top:12px;">תצוגה בלבד — לשינויים יש לפנות למנהל/ת הצוות.</div>`}
+    ${editable ? `<div class="muted" style="margin-top:12px;">לחיצה על תא פותחת עריכה — בחירת סיבת היעדרות והוספת הערה קצרה.</div>` : `<div class="muted" style="margin-top:12px;">תצוגה בלבד — לשינויים יש ללחוץ על "עריכה" למעלה.</div>`}
   </div>`;
 }
 
@@ -528,7 +554,12 @@ function renderEditModal(){
   const {empId, dateISO} = state.editing;
   const emp = state.employees.find(e=>e.id===empId);
   const dIdx = weekDates(getWeekStartForDate(dateISO)).indexOf(dateISO);
-  const chips = STATUSES.map(s=>`<button class="chip-opt ${state.editing.status===s.id?'selected':''}" style="background:${s.color}" data-action="pick-status" data-id="${s.id}">${s.label}</button>`).join('');
+  const isEditor = state.role==='editor';
+  const currentStatus = state.scheduleByWeek[state.editing.week]?.[empId]?.[dateISO]?.status || null;
+  const chips = STATUSES.filter(s=>!(isEditor && s.id==='holiday')).map(s=>{
+    const err = (isEditor && s.id!==currentStatus) ? validateEditorChange(state.editing.week, empId, dateISO, s.id) : null;
+    return `<button class="chip-opt ${state.editing.status===s.id?'selected':''} ${err?'blocked':''}" style="background:${s.color}" data-action="pick-status" data-id="${s.id}" ${err?`data-reason="${escapeHtml(err)}"`:''}>${s.label}</button>`;
+  }).join('');
   return `
   <div class="overlay" data-action="close-modal-bg">
     <div class="modal" data-stop>
@@ -546,8 +577,44 @@ function renderEditModal(){
     </div>
   </div>`;
 }
+const CONFLICT_WITH_HOME = ['sick','child_sick','vacation'];
+// returns an error message (string) if an employee in edit mode may NOT set newStatus on this cell, otherwise null
+function validateEditorChange(week, empId, dateISO, newStatus){
+  if(!newStatus) return null;
+  if(newStatus==='holiday') return 'חג ניתן לסימון על ידי המנהל בלבד';
+  const sched = state.scheduleByWeek[week] || {};
+  const mine = sched[empId] || {};
+  const otherDays = Object.keys(mine).filter(d=>d!==dateISO && mine[d] && mine[d].status);
+  if(newStatus==='home'){
+    const othersHome = state.employees.filter(e=>e.id!==empId && sched[e.id]?.[dateISO]?.status==='home').length;
+    if(othersHome >= WFH_DAILY_CAP) return `המכסה ליום זה מלאה — כבר ${WFH_DAILY_CAP} עובדים מהבית`;
+    if(otherDays.some(d=>mine[d].status==='home')) return 'אפשר לעבוד מהבית פעם אחת בלבד בשבוע';
+    if(otherDays.some(d=>CONFLICT_WITH_HOME.includes(mine[d].status))) return 'אי אפשר לשלב עבודה מהבית עם מחלה או חופשה באותו שבוע';
+  } else if(CONFLICT_WITH_HOME.includes(newStatus)){
+    if(otherDays.some(d=>mine[d].status==='home')) return 'אי אפשר לשלב מחלה או חופשה עם עבודה מהבית באותו שבוע';
+  }
+  return null;
+}
+
+function renderEditor(){
+  const tabs = `<div class="tabs">
+    <button class="tab-btn ${state.editorTab==='current'?'active':''}" data-action="editor-tab" data-tab="current">השבוע הנוכחי</button>
+    <button class="tab-btn ${state.editorTab==='next'?'active':''}" data-action="editor-tab" data-tab="next">השבוע הבא</button>
+  </div>`;
+  const rules = `<div class="editor-rules"><b>כללי עריכה</b>
+    • עבודה מהבית — פעם אחת בלבד בשבוע לכל עובד/ת<br>
+    • אי אפשר לשלב עבודה מהבית עם מחלה, מחלת ילד או חופשה באותו שבוע<br>
+    • עד ${WFH_DAILY_CAP} עובדים מהבית ביום (שורת "מהבית" בתחתית הטבלה מראה כמה תפוסים)</div>`;
+  return tabs + rules + (state.editorTab==='next'
+    ? renderManagerGrid(NEXT_WEEK_START, 'השבוע הבא', true, true)
+    : renderManagerGrid(CURRENT_WEEK_START, 'השבוע הנוכחי', true, true));
+}
+
 function dayAllHoliday(schedule, dateISO){
   return state.employees.length>0 && state.employees.every(e=>schedule[e.id]?.[dateISO]?.status==='holiday');
+}
+function countHome(schedule, dateISO){
+  return state.employees.filter(e=>schedule[e.id]?.[dateISO]?.status==='home').length;
 }
 function getWeekStartForDate(dateISO){
   return toISO(getSunday(new Date(dateISO+'T00:00:00')));
@@ -571,8 +638,13 @@ function renderPinModal(){
 
 /* ---------- employees management ---------- */
 function renderEmployeesPanel(){
-  const rows = state.employees.map(e=>`
+  const last = state.employees.length-1;
+  const rows = state.employees.map((e,idx)=>`
     <div class="emp-row">
+      <div class="emp-reorder">
+        <button class="icon-btn" data-action="emp-move-up" data-id="${e.id}" title="הזזה למעלה" ${idx===0?'disabled':''}>▲</button>
+        <button class="icon-btn" data-action="emp-move-down" data-id="${e.id}" title="הזזה למטה" ${idx===last?'disabled':''}>▼</button>
+      </div>
       <input class="ename" value="${escapeHtml(e.name)}" data-action="emp-name" data-id="${e.id}">
       <input class="ephone" value="${escapeHtml(e.phone||'')}" placeholder="טלפון" data-action="emp-phone" data-id="${e.id}">
       <button class="icon-btn" data-action="emp-remove" data-id="${e.id}" title="הסרה">✕</button>
@@ -580,6 +652,7 @@ function renderEmployeesPanel(){
   return `
   <div class="panel">
     <div class="panel-title"><span>רשימת עובדים</span><span class="muted">${state.employees.length} עובדים</span></div>
+    <div class="muted" style="margin-bottom:10px;">אפשר לשנות את סדר הרשימה עם החיצים — זה גם הסדר שבו העובדים מופיעים בטבלאות.</div>
     ${rows}
     <div class="add-emp">
       <input id="new-emp-name" placeholder="שם עובד/ת חדש/ה">
@@ -703,6 +776,9 @@ function attachHandlers(){
     if(action==='retry-load'){ location.reload(); return; }
     if(action==='enter-manager'){ state.pinPrompt=true; state.pinValue=''; state.pinError=false; render(); }
     else if(action==='exit-manager'){ setRole('employee'); }
+    else if(action==='enter-editor'){ state.editorTab='current'; setRole('editor'); }
+    else if(action==='exit-editor'){ state.editing=null; setRole('employee'); }
+    else if(action==='editor-tab'){ state.editorTab=t.dataset.tab; render(); }
     else if(action==='toggle-weekly-view'){ state.employeeWeeklyView = !state.employeeWeeklyView; render(); }
     else if(action==='cancel-pin'){ state.pinPrompt=false; state.pinValue=''; state.pinError=false; render(); }
     else if(action==='submit-pin'){
@@ -718,10 +794,22 @@ function attachHandlers(){
       state.editing = {empId, dateISO, week, status: existing?.status || null, note: existing?.note || ''};
       render();
     }
-    else if(action==='pick-status'){ state.editing.status = t.dataset.id || null; render(); }
+    else if(action==='pick-status'){
+      if(t.dataset.reason){ showToast(t.dataset.reason); return; }
+      state.editing.status = t.dataset.id || null; render();
+    }
     else if(action==='cancel-edit'){ state.editing=null; render(); }
     else if(action==='save-edit'){
       const {empId, dateISO, week, status, note} = state.editing;
+      // always work from the latest version of the week (others may have edited it meanwhile)
+      const fresh = await fetchWeekFresh(week);
+      if(fresh) state.scheduleByWeek[week] = fresh;
+      else if(state.role==='editor'){ showToast('לא ניתן לאמת מול הגיליון כרגע — נסו שוב'); return; }
+      if(state.role==='editor'){
+        const current = state.scheduleByWeek[week]?.[empId]?.[dateISO];
+        const err = (current && current.status===status) ? null : validateEditorChange(week, empId, dateISO, status);
+        if(err){ showToast(err); return; }
+      }
       if(!state.scheduleByWeek[week]) state.scheduleByWeek[week]={};
       if(!state.scheduleByWeek[week][empId]) state.scheduleByWeek[week][empId]={};
       if(status){ state.scheduleByWeek[week][empId][dateISO] = {status, note: (note||'').trim()}; }
@@ -732,6 +820,7 @@ function attachHandlers(){
       showToast('נשמר');
     }
     else if(action==='toggle-holiday-day'){
+      if(state.role!=='manager') return;
       const dateISO=t.dataset.date, week=t.dataset.week;
       if(!state.scheduleByWeek[week]) state.scheduleByWeek[week]={};
       const schedule = state.scheduleByWeek[week];
@@ -744,6 +833,22 @@ function attachHandlers(){
       render();
       await saveWeek(week);
       showToast(allHoliday ? 'החג בוטל' : 'סומן חג לכל הצוות ביום זה');
+    }
+    else if(action==='emp-move-up'){
+      const idx = state.employees.findIndex(e=>e.id===t.dataset.id);
+      if(idx>0){
+        [state.employees[idx-1], state.employees[idx]] = [state.employees[idx], state.employees[idx-1]];
+        render();
+        await saveEmployees();
+      }
+    }
+    else if(action==='emp-move-down'){
+      const idx = state.employees.findIndex(e=>e.id===t.dataset.id);
+      if(idx>=0 && idx<state.employees.length-1){
+        [state.employees[idx], state.employees[idx+1]] = [state.employees[idx+1], state.employees[idx]];
+        render();
+        await saveEmployees();
+      }
     }
     else if(action==='emp-remove'){
       const id=t.dataset.id;
